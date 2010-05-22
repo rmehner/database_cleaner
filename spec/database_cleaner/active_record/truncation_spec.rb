@@ -18,7 +18,10 @@ module DatabaseCleaner
       before(:each) do
         @connection = mock('connection')
         @connection.stub!(:disable_referential_integrity).and_yield
-        ::ActiveRecord::Base.stub!(:connection).and_return(@connection)
+        
+        connection_pools = {:model => stub('connection_pool', :connection => @connection)}
+        @connection_handler = stub('connection_handler', :connection_pools => connection_pools)
+        ::ActiveRecord::Base.stub!(:connection_handler).and_return(@connection_handler)
       end
 
       it "should truncate all tables except for schema_migrations" do
@@ -59,7 +62,21 @@ module DatabaseCleaner
         running { Truncation.new(:foo => 'bar') }.should raise_error(ArgumentError)
       end
 
-
+      it "should truncate the tables on all connected databases" do
+        connection_pools = {}
+        
+        ['local_connection', 'remote_connection'].each do |stub_name|
+          connection = stub(stub_name)
+          connection.stub!(:tables).and_return(['table'])
+          connection.should_receive(:truncate_table)
+          connection.stub!(:disable_referential_integrity).and_yield
+          connection_pools[stub_name] = stub(stub_name, :connection => connection)
+        end
+        
+        @connection_handler.stub!(:connection_pools).and_return(connection_pools)
+        
+        Truncation.new.clean
+      end
     end
 
   end
